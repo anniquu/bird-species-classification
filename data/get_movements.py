@@ -42,11 +42,21 @@ for _, row in stations_df.iterrows():
                 if name and name != "none":
                     names.add(name)
 
+            detections = mov.get("detections", {})
+            predictions = set()
+            for det in detections:
+                name = det.get("latinName").lower()
+                score = det.get("score")
+                if name and score is not None:
+                    predictions.add((name, round(score, 2)))
+
             if names:
                 validated_data.append({
-                    "station_id": station_id,
-                    "mov_id": mov["mov_id"],
-                    "names": list(names)
+                    "station_id":   station_id,
+                    "mov_id":       mov["mov_id"],
+                    "predictions":  ", ".join(str(t) for t in sorted(predictions, key=lambda x: x[1], reverse=True)),
+                    "validations":  ", ".join(str(t) for t in sorted(names)),
+                    "video_link":   mov["video"],
                 })
 
         if validated_data:
@@ -72,8 +82,8 @@ species_counter = Counter()
 
 try:
     df = pd.read_csv("data/all_validated_movements.csv")
-    if "names" in df.columns:
-        species_counter.update(df["names"].dropna().tolist())
+    if "validations" in df.columns:
+        species_counter.update(df["validations"].dropna().tolist())
 except Exception as e:
     print(f"[ERROR] Failed to process: {e}")
 
