@@ -21,5 +21,5 @@ for station in stations_data:
     })
 
 stations_df = pd.DataFrame(station_list)
-stations_df.to_csv("data/station_ids.csv", index=False)
+stations_df.to_csv("data/csv/station_ids.csv", index=False)
 print("Saved to station_ids.csv")

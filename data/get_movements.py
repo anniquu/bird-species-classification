@@ -2,7 +2,7 @@ import requests
 import pandas as pd
 
 # Load stations
-stations_df = pd.read_csv("data/station_ids.csv")
+stations_df = pd.read_csv("data/csv/station_ids.csv")
 
 base_url = "https://wiediversistmeingarten.org/api"
 
@@ -54,8 +54,8 @@ for _, row in stations_df.iterrows():
                 validated_data.append({
                     "station_id":   station_id,
                     "mov_id":       mov["mov_id"],
-                    "predictions":  ", ".join(str(t) for t in sorted(predictions, key=lambda x: x[1], reverse=True)),
-                    "validations":  ", ".join(str(t) for t in sorted(names)),
+                    "predictions":  "; ".join(str(t) for t in sorted(predictions, key=lambda x: x[1], reverse=True)),
+                    "validations":  "; ".join(str(t) for t in sorted(names)),
                     "video_link":   mov["video"],
                 })
 
@@ -70,7 +70,7 @@ for _, row in stations_df.iterrows():
 
 if all_validated_data:
     df = pd.DataFrame(all_validated_data)
-    df.to_csv(f"data/all_validated_movements.csv", index=False)
+    df.to_csv(f"data/csv/all_validated_movements.csv", index=False)
     print("[OK] Saved all validated movements to all_validated_movements.csv")
 else:
     print("[INFO] No validated movements collected from any station")

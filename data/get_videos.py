@@ -7,7 +7,7 @@ output_dir = "data/videos"
 os.makedirs("data/videos", exist_ok=True)
 
 # Load the CSV
-mov_df = pd.read_csv("data/all_validated_movements.csv")
+mov_df = pd.read_csv("data/csv/all_validated_movements.csv")
 
 sampled_df = mov_df.groupby("validations", group_keys=False).apply(lambda x: x.sample(min(len(x), 10), random_state=42))
 
