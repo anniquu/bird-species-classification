@@ -2,6 +2,14 @@ import os
 import cv2
 import glob
 
+def center_crop_to_square(frame):
+    """Crop the center square from a frame."""
+    height, width, _ = frame.shape
+    min_dim = min(height, width)
+    start_x = (width - min_dim) // 2
+    start_y = (height - min_dim) // 2
+    return frame[start_y:start_y + min_dim, start_x:start_x + min_dim]
+
 # Input and output base directories
 video_base_dir = "data/videos"
 frame_base_dir = "data/frames"
@@ -29,7 +37,7 @@ for species in os.listdir(video_base_dir):
             continue
 
         fps = cap.get(cv2.CAP_PROP_FPS)
-        frame_interval = int(fps) * 2  # Capture n frame(s) every second
+        frame_interval = int(fps) * 1  # Capture all frames
 
         frame_count = 0
         saved_count = 0
@@ -38,8 +46,9 @@ for species in os.listdir(video_base_dir):
             if not ret:
                 break
             if frame_count % frame_interval == 0:
+                cropped = center_crop_to_square(frame)
                 frame_path = os.path.join(output_dir, f"{video_id}_{saved_count:03d}.jpg")
-                cv2.imwrite(frame_path, frame)
+                cv2.imwrite(frame_path, cropped)
                 saved_count += 1
             frame_count += 1
 
