@@ -1,25 +1,39 @@
+import argparse
+from pathlib import Path
 import requests
 import pandas as pd
 
-base_url = "https://wiediversistmeingarten.org/api"
-stations_url = f"{base_url}/station"
 
-response = requests.get(stations_url)
-stations_data = response.json()
+BASE_URL = "https://wiediversistmeingarten.org/api"
 
-station_list = []
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Save a list of all Birdiary stations as a csv.")
+    parser.add_argument("--workdir", type=str, default="./", help="Path to local data directory.")
+    args = parser.parse_args()
 
-for station in stations_data:
-    last_movement = station.get("lastMovement")
-    station_list.append({
-        "station_id": station["station_id"],
-        "name": station["name"],
-        # "lat": station["location"]["lat"],
-        # "lng": station["location"]["lng"],
-        # "sensebox_id": station.get("sensebox_id", "")
-        "last_movement_date": last_movement.get("createdAt") if last_movement else None,
-    })
+    workdir = Path(args.workdir).expanduser().resolve()
+    workdir.mkdir(parents=True, exist_ok=True)
 
-stations_df = pd.DataFrame(station_list)
-stations_df.to_csv("data/csv/station_ids.csv", index=False)
-print("Saved to station_ids.csv")
+
+    stations_url = f"{BASE_URL}/station"
+
+    response = requests.get(stations_url)
+    stations_data = response.json()
+
+    station_list = []
+
+    for station in stations_data:
+        last_movement = station.get("lastMovement")
+        station_list.append({
+            "station_id": station["station_id"],
+            "name": station["name"],
+            # "lat": station["location"]["lat"],
+            # "lng": station["location"]["lng"],
+            # "sensebox_id": station.get("sensebox_id", "")
+            "last_movement_date": last_movement.get("createdAt") if last_movement else None,
+        })
+
+    stations_df = pd.DataFrame(station_list)
+    output_path = workdir / "station_ids.csv"
+    stations_df.to_csv(output_path, index=False)
+    print(f"Saved {len(stations_df.index)} stations to {output_path}.")
