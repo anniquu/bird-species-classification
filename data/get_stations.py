@@ -9,6 +9,7 @@ BASE_URL = "https://wiediversistmeingarten.org/api"
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Save a list of all Birdiary stations as a csv.")
     parser.add_argument("--workdir", type=str, default="./", help="Path to local data directory.")
+    parser.add_argument("--user-agent", type=str, default="", help="User agent for requests.")
     args = parser.parse_args()
 
     workdir = Path(args.workdir).expanduser().resolve()
@@ -17,7 +18,12 @@ if __name__ == "__main__":
 
     stations_url = f"{BASE_URL}/station"
 
-    response = requests.get(stations_url)
+
+    if args.user_agent:
+        # Attach custom header with User-Agent
+        response = requests.get(url=stations_url, headers={"User-Agent": args.user_agent})
+    else:
+        response = requests.get(url=stations_url)
     stations_data = response.json()
 
     station_list = []

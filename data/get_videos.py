@@ -4,9 +4,25 @@ import pandas as pd
 import requests
 
 
-if __name__ == "__main__":
+def download_video(session, video_url, output_path):
+    """Download the movements video using the same session."""
+    try:
+        response = session.get(video_url, stream=True)
+        if response.status_code == 200:
+            with open(output_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8129):
+                    f.write(chunk)
+            print(f"[OK] Downloaded video to {output_path}")
+        else:
+            print(f"[ERROR] Failed to download {output_path}: HTTP {response.status_code}")
+    except Exception as e:
+        print(f"[EXCEPTION] Error downloading {output_path}: {e}")
+
+
+def main():
     parser = argparse.ArgumentParser(description="Download the videos from a list of movements.")
     parser.add_argument("--workdir", type=str, default="./", help="Path to local data directory.")
+    parser.add_argument("--user-agent", type=str, default="", help="User agent for requests.")
     parser.add_argument("--input", type=str, default="movements.csv", help="Name of the file containing the movements.")
     args = parser.parse_args()
 
@@ -22,28 +38,29 @@ if __name__ == "__main__":
     # Use only a sample (for testing)
     # sampled_df = mov_df.groupby("validations", group_keys=False).apply(lambda x: x.sample(min(len(x), 10), random_state=42))
 
-    # Iterate over rows and download each video
-    for _, row in mov_df.iterrows():
-        station_id = row["station_id"]
-        mov_id = row["mov_id"]
-        video_url = row["video_link"]
-        species_name = row["validations"].strip().replace(" ", "_")
+    with requests.Session() as session:
+        if args.user_agent:
+            # Create a session with custom User-Agent
+            session.headers.update({"User-Agent": args.user_agent})
 
-        # Create species-specific subdirectory
-        species_dir = output_dir / species_name
-        species_dir.mkdir(parents=True, exist_ok=True)
+        # Iterate over rows and download each video
+        for _, row in mov_df.iterrows():
+            station_id = row["station_id"]
+            mov_id = row["mov_id"]
+            video_url = row["video_link"]
+            species_name = row["validations"].strip().replace(" ", "_")
 
-        # Create a filename based on station and movement ID
-        filename = f"{station_id}_{mov_id}.mp4"
+            # Create species-specific subdirectory
+            species_dir = output_dir / species_name
+            species_dir.mkdir(parents=True, exist_ok=True)
 
-        try:
-            response = requests.get(video_url, stream=True)
-            if response.status_code == 200:
-                with open(species_dir / filename, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                print(f"[OK] Downloaded video: {filename} to {species_name}/")
-            else:
-                print(f"[ERROR] Failed to download {filename}: HTTP {response.status_code}")
-        except Exception as e:
-            print(f"[EXCEPTION] Error downloading {filename}: {e}")
+            # Create a filename based on station and movement ID
+            filename = f"{station_id}_{mov_id}.mp4"
+            output_path = species_dir / filename
+
+            # Download video using the session
+            download_video(session, video_url, output_path)
+
+
+if __name__ == "__main__":
+    main()

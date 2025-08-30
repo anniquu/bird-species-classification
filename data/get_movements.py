@@ -11,29 +11,36 @@ EXCLUDED_VALIDATIONS = [ # Manually crafted list of existing invalid/incorrect c
         "cyanocitta cristata", "poecile atricapillus", "sitta canadensis", "melospiza lincolnii", 
         "molothrus ater", "thryomanes bewickii", "thryothorus ludovicianus", "poecile carolinensis",
         "ardea herodias", "anthornis melanura", "hemiphaga novaeseelandiae", "seiurus aurocapilla",
-        "egretta novaehollandiae", "alopochen aegyptiaca", "sitta pygmaea", "corvus corax", "familie",
-        "dohle", "no bird", "grünfink", "gruenfink", "blaumeise", "sumpf", "deutsches", "kohl",
-        "kohlmeise", "erlenzeisig", "weidenmeise", "sumpfmeise", "erlen", "test", "b","buchfink", 
-        "stofftier", "unscharf", "eichhörnchen", "eichelhäher", "mönchsgrasmücke", "cloris",
-        "elster", "kernbeißer, star", "kohlemeise", "erlej", "gimpel", "human", "haussperling",
-        "blau", "buntsprecht", "parus major u. feldsperling","hirundo rustica"
+        "egretta novaehollandiae", "alopochen aegyptiaca", "sitta pygmaea", "corvus corax", "hirundo rustica"
     ]
+
 
 def process_movements(station_id, mov, validated_only):
     """Extracts the validation(s) and predictions from a movement"""
     validations = mov.get("validation", {}).get("validations", [])
     if validated_only and not validations:
-        return
+        return None
 
     names = set()
     for val in validations:
-        name = (val.get("latinName", "") or val.get("germanName", "")).strip().lower()
+        name = val.get("latinName", "").strip().lower()
         if not name or name == "none":
+            # Videos without a bird not needed
+            continue        
+
+        if val.get("germanName", "") == "" and name != "homo sapiens":
+            # If german name is empty the latin name contains an non specified species
+            # station_id/mov_id in print for easy copy-paste website verification
+            print(f"[SKIP INFO] {station_id}/{mov['mov_id']}, latinName of empty germanName: {name}")
             continue
 
-        if any(excluded in name for excluded in EXCLUDED_VALIDATIONS):
+        if name in EXCLUDED_VALIDATIONS or "familie" in name:
             continue
         names.add(name)
+
+    if validated_only and not names:
+        # Skip if no qualifying validations found and validated_only True
+        return None
 
     detections = mov.get("detections", {})
     predictions = set()
@@ -52,11 +59,11 @@ def process_movements(station_id, mov, validated_only):
     }
 
 
-def fetch_with_retries(url, max_retries=5, base_delay=2):
-    """Helper: Fetch with retries and timeout"""
+def fetch_with_retries(session, url, max_retries=5, base_delay=2):
+    """Fetch with retries using an existing session"""
     for attempt in range(max_retries):
         try:
-            response = requests.get(url, timeout=15)
+            response = session.get(url, timeout=15)
             if response.status_code == 200:
                 return response
             else:
@@ -70,6 +77,7 @@ def fetch_with_retries(url, max_retries=5, base_delay=2):
 def main():
     parser = argparse.ArgumentParser(description="Fetch movements for stations and save to CSV.")
     parser.add_argument("--workdir", type=str, default="./", help="Path to local data directory.")
+    parser.add_argument("--user-agent", type=str, default="", help="User agent for requests.")
     parser.add_argument("--validated-only", action=argparse.BooleanOptionalAction, 
         default=True, help="Only include movements with at least one human validation.")
     parser.add_argument("--number-movements", type=int, help="Number of movements to retrieve per station (API limit).")
@@ -85,48 +93,55 @@ def main():
 
     all_stations_movs = []
 
-    # Iterate over stations
-    for _, row in stations_df.iterrows():
-        station_id = row["station_id"]
-        station_name = str(row["name"])
+    with requests.Session() as session:
+        if args.user_agent:
+            # Attach custom header with User-Agent
+            session.headers.update({"User-Agent": args.user_agent})
 
-        print(f"[INFO] Fetching movements for station {station_name} ({station_id})")
+        # Adjust connection pooling
+        adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
 
-        # Build URL with optional limit
-        movements_url = f"{BASE_URL}/movement/{station_id}"
-        if args.number_movements:
-            movements_url += f"?movements={args.number_movements}"
+        for _, row in stations_df.iterrows():
+            station_id = row["station_id"]
+            station_name = str(row["name"])
+            print(f"[INFO] Fetching movements for station {station_name} ({station_id})")
 
-        response = fetch_with_retries(movements_url)
-        if response is None:
-            print(f"[EXCEPTION] Station {station_id} failed after retries")
-            continue
+            movements_url = f"{BASE_URL}/movement/{station_id}"
+            if args.number_movements:
+                movements_url += f"?movements={args.number_movements}"
 
-        try:
-            movements = response.json()
-            if not movements:
-                # Skip if the station has no movements
-                print(f"[INFO] No movements for station: {station_name}")
+            response = fetch_with_retries(session, movements_url)
+            if response is None:
+                print(f"[EXCEPTION] Station {station_id} failed after retries")
                 continue
 
-            movement_data = []
-            # Go through all of the movements of the station
-            for mov in movements:
-                processed = process_movements(station_id, mov, args.validated_only)
-                if processed:
-                    movement_data.append(processed)
+            try:
+                movements = response.json()
+                if not movements:
+                    # Skip if the station has no movements                
+                    print(f"[INFO] No movements for station: {station_name}")
+                    continue
 
-            if movement_data:
-                all_stations_movs.extend(movement_data)
-                print(f"[OK] Collected {len(movement_data)} movement(s) for: {station_name}")
-            else:
-                print(f"[INFO] No movements for station: {station_name}")
+                movement_data = []
+                # Go through all of the movements of the station
+                for mov in movements:
+                    processed = process_movements(station_id, mov, args.validated_only)
+                    if processed:
+                        movement_data.append(processed)
 
-        except Exception as e:
-            print(f"[EXCEPTION] Error processing station {station_id}: {e}")
+                if movement_data:
+                    all_stations_movs.extend(movement_data)
+                    print(f"[OK] Collected {len(movement_data)} movement(s) for: {station_name}")
+                else:
+                    print(f"[INFO] No movements for station: {station_name}")
 
-        # Delay between stations
-        time.sleep(random.uniform(1.0, 2.5))
+            except Exception as e:
+                print(f"[EXCEPTION] Error processing station {station_id}: {e}")
+
+            # Delay between stations
+            time.sleep(random.uniform(1.0, 2.5))
 
     # Save collected data
     output_csv_path = workdir / "movements.csv"
