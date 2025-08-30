@@ -59,8 +59,9 @@ def process_movements(station_id, mov, validated_only):
     }
 
 
-def fetch_with_retries(session, url, max_retries=5, base_delay=2):
+def fetch_with_retries(session, url, max_retries=5, base_delay=1):
     """Fetch with retries using an existing session"""
+    # I had issues sometimes with unresponsiveness from many requests
     for attempt in range(max_retries):
         try:
             response = session.get(url, timeout=15)
@@ -72,6 +73,47 @@ def fetch_with_retries(session, url, max_retries=5, base_delay=2):
             print(f"[WARN] Attempt {attempt + 1} failed: {e}")
         time.sleep(base_delay * (2**attempt) + random.uniform(0, 1))
     return None
+
+
+def process_station(session, row, validated_only, output_csv_path, number_movements):
+    """Go through the movements of a station and save incrementally to csv."""
+    station_id = row["station_id"]
+    station_name = str(row["name"])
+    print(f"[INFO] Fetching movements for station {station_name} ({station_id})")
+
+    movements_url = f"{BASE_URL}/movement/{station_id}"
+    if number_movements:
+        movements_url += f"?movements={number_movements}"
+
+    response = fetch_with_retries(session, movements_url)
+    if response is None:
+        print(f"[EXCEPTION] Station {station_id} failed after retries")
+        return 0
+
+    try:
+        movements = response.json()
+        if not movements:
+            # Skip if the station has no movements                
+            print(f"[INFO] No movements for station: {station_name}")
+            return 0
+
+        # Go through all of the movements of the station
+        num_movs = 0
+        for mov in movements:
+            processed = process_movements(station_id, mov, validated_only)
+            if processed:
+                df = pd.DataFrame([processed])
+                df.to_csv(output_csv_path, mode="a", header=not Path(output_csv_path).exists(), index=False)
+                num_movs += 1
+
+        if num_movs > 0:
+            print(f"[OK] Collected {num_movs} movement(s) for: {station_name}")
+        else:
+            print(f"[INFO] No movements for station: {station_name}")
+        return num_movs
+    except Exception as e:
+        print(f"[EXCEPTION] Error processing station {station_id}: {e}")
+
 
 
 def main():
@@ -91,7 +133,8 @@ def main():
         raise FileNotFoundError(f"Missing {stations_csv}!")
     stations_df = pd.read_csv(stations_csv)
 
-    all_stations_movs = []
+    # Path for collected data
+    output_csv_path = workdir / "movements.csv"
 
     with requests.Session() as session:
         if args.user_agent:
@@ -103,56 +146,14 @@ def main():
         session.mount("https://", adapter)
         session.mount("http://", adapter)
 
+        sum_movs = 0
         for _, row in stations_df.iterrows():
-            station_id = row["station_id"]
-            station_name = str(row["name"])
-            print(f"[INFO] Fetching movements for station {station_name} ({station_id})")
-
-            movements_url = f"{BASE_URL}/movement/{station_id}"
-            if args.number_movements:
-                movements_url += f"?movements={args.number_movements}"
-
-            response = fetch_with_retries(session, movements_url)
-            if response is None:
-                print(f"[EXCEPTION] Station {station_id} failed after retries")
-                continue
-
-            try:
-                movements = response.json()
-                if not movements:
-                    # Skip if the station has no movements                
-                    print(f"[INFO] No movements for station: {station_name}")
-                    continue
-
-                movement_data = []
-                # Go through all of the movements of the station
-                for mov in movements:
-                    processed = process_movements(station_id, mov, args.validated_only)
-                    if processed:
-                        movement_data.append(processed)
-
-                if movement_data:
-                    all_stations_movs.extend(movement_data)
-                    print(f"[OK] Collected {len(movement_data)} movement(s) for: {station_name}")
-                else:
-                    print(f"[INFO] No movements for station: {station_name}")
-
-            except Exception as e:
-                print(f"[EXCEPTION] Error processing station {station_id}: {e}")
-
+            num_movs = process_station(session, row, args.validated_only, output_csv_path, args.number_movements)
+            sum_movs += num_movs
             # Delay between stations
-            time.sleep(random.uniform(1.0, 2.5))
+            # time.sleep(random.uniform(1.0, 2.5))
 
-    # Save collected data
-    output_csv_path = workdir / "movements.csv"
-
-    if all_stations_movs:
-        df = pd.DataFrame(all_stations_movs)
-        df.to_csv(output_csv_path, index=False)
-        print(f"[OK] Saved total {len(all_stations_movs)} movements to {output_csv_path}")
-    else:
-        print("[INFO] No movements collected from any station")
-
+    print(f"[OK] Saved total {sum_movs} movements to {output_csv_path}")
 
 if __name__ == "__main__":
     main()
