@@ -110,6 +110,10 @@ def train_model(args):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
+    # For checkpoints
+    timestamp = datetime.now().strftime("%m%d_%H%M")
+    best_acc = -1.0
+
     epochs = args.epochs
     for epoch in range(epochs):
         print(f"\n[INFO] Epoch {epoch+1}/{epochs}")
@@ -149,10 +153,11 @@ def train_model(args):
         acc = 100.0 * correct / max(1, total)
         print(f"  [VAL] Accuracy: {acc:.2f}%")
 
-    timestamp = datetime.now().strftime("%y%m%d_%H%M")
-    out_path = path / f"{timestamp}_bird_filter_e{epochs}.pth"
-    torch.save(model.state_dict(), out_path)
-    print(f"\n[SAVED] Model saved to {out_path}")
+        if acc > best_acc:
+            best_acc = acc
+            out_path = path / f"acc{acc:.2f}_e{epoch+1}_bird_filter_{timestamp}.pth"
+            torch.save(model.state_dict(), out_path)
+            print(f"  [SAVED] Model saved as {out_path.relative_to(path)}")
 
 
 def load_model(model_path: Path, device):
